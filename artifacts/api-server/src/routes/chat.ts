@@ -30,15 +30,8 @@ router.post("/chat", async (req, res) => {
       body: JSON.stringify({
         model: NVIDIA_MODEL,
         messages: parsed.data.messages,
-        temperature: 1,
-        top_p: 0.95,
         max_tokens: 1024,
-        extra_body: {
-          chat_template_kwargs: {
-            enable_thinking: false,
-          },
-          reasoning_budget: 0,
-        },
+        stream: false,
       }),
     });
 
@@ -49,7 +42,15 @@ router.post("/chat", async (req, res) => {
         "NVIDIA request failed",
       );
       if (upstream.status === 401) {
-        res.status(401).json({ error: "NVIDIA_API_KEY is missing or invalid. Please update the server secret." });
+        res.status(401).json({ error: "NVIDIA API key is invalid or unauthorized." });
+        return;
+      }
+      if (upstream.status === 404) {
+        res.status(502).json({ error: "NVIDIA endpoint or model was not found. Check the configured model ID and API URL." });
+        return;
+      }
+      if (upstream.status === 429) {
+        res.status(429).json({ error: "NVIDIA rate limit reached. Please try again shortly." });
         return;
       }
       if (upstream.status === 502 || upstream.status === 503) {
