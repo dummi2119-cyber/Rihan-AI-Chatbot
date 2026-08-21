@@ -30,18 +30,30 @@ router.post("/chat", async (req, res) => {
       body: JSON.stringify({
         model: NVIDIA_MODEL,
         messages: parsed.data.messages,
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 2048,
-        stream: false,
+        temperature: 1,
+        top_p: 0.95,
+        max_tokens: 1024,
+        extra_body: {
+          chat_template_kwargs: {
+            enable_thinking: false,
+          },
+          reasoning_budget: 0,
+        },
       }),
     });
 
     if (!upstream.ok) {
       const detail = await upstream.text();
-      req.log.error({ status: upstream.status, detail: detail.slice(0, 500) }, "NVIDIA request failed");
-      if (upstream.status === 401 || upstream.status === 403) {
-        res.status(502).json({ error: "NVIDIA API key rejected. Please update NVIDIA_API_KEY and try again." });
+      req.log.error(
+        { status: upstream.status, responseBody: detail.slice(0, 2000) },
+        "NVIDIA request failed",
+      );
+      if (upstream.status === 401) {
+        res.status(401).json({ error: "NVIDIA_API_KEY is missing or invalid. Please update the server secret." });
+        return;
+      }
+      if (upstream.status === 502 || upstream.status === 503) {
+        res.status(502).json({ error: "The NVIDIA model is temporarily unavailable. Please try again." });
         return;
       }
       res.status(502).json({ error: "Rihan AI could not reach the model. Please try again." });
