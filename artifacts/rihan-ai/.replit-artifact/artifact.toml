@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Rihan AI"
+description = "A mobile-first AI chatbot for Hindi and English conversations, powered by NVIDIA Nemotron with local message history and a secure server-side API proxy."
+version = "1.0.0"
+id = "artifacts/rihan-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24096
+
+[services.development]
+run = "pnpm --filter @workspace/rihan-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/rihan-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/rihan-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24096"
+BASE_PATH = "/"
