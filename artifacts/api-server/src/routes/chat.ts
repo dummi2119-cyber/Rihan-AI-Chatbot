@@ -40,6 +40,10 @@ router.post("/chat", async (req, res) => {
     if (!upstream.ok) {
       const detail = await upstream.text();
       req.log.error({ status: upstream.status, detail: detail.slice(0, 500) }, "NVIDIA request failed");
+      if (upstream.status === 401 || upstream.status === 403) {
+        res.status(502).json({ error: "NVIDIA API key rejected. Please update NVIDIA_API_KEY and try again." });
+        return;
+      }
       res.status(502).json({ error: "Rihan AI could not reach the model. Please try again." });
       return;
     }
