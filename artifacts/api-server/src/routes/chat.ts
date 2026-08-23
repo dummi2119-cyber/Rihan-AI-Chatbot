@@ -3,6 +3,7 @@ import {
   SendChatMessageBody,
   SendChatMessageResponse,
 } from "@workspace/api-zod";
+import { fetchWeatherContext, isWeatherQuestion } from "../lib/weather";
 
 const router = Router();
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
@@ -24,6 +25,31 @@ router.post("/chat", async (req, res) => {
   }
 
   try {
+    let messages = parsed.data.messages;
+    const latestUserMessage = [...messages]
+      .reverse()
+      .find((message) => message.role === "user");
+
+    if (latestUserMessage && isWeatherQuestion(latestUserMessage.content)) {
+      try {
+        const weather = await fetchWeatherContext(latestUserMessage.content);
+        req.log.info({ location: weather.location }, "Weather context added to NVIDIA request");
+        messages = [
+          {
+            role: "system",
+            content: weather.context,
+          },
+          ...messages,
+        ];
+      } catch (error) {
+        req.log.error({ err: error }, "Weather lookup failed");
+        res.status(502).json({
+          error: "Live weather is temporarily unavailable. Please try again.",
+        });
+        return;
+      }
+    }
+
     const upstream = await fetch(NVIDIA_URL, {
       method: "POST",
       headers: {
@@ -32,7 +58,7 @@ router.post("/chat", async (req, res) => {
       },
       body: JSON.stringify({
         model: NVIDIA_MODEL,
-        messages: parsed.data.messages,
+        messages,
         max_tokens: 1024,
         stream: false,
       }),
