@@ -1,7 +1,10 @@
-import { Router, type IRouter } from "express";
-import { SendChatMessageBody, SendChatMessageResponse } from "@workspace/api-zod";
+import { Router } from "express";
+import {
+  SendChatMessageBody,
+  SendChatMessageResponse,
+} from "@workspace/api-zod";
 
-const router: IRouter = Router();
+const router = Router();
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const NVIDIA_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
 
