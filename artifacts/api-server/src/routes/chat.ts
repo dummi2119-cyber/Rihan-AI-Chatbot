@@ -8,6 +8,12 @@ import { fetchWeatherContext, isWeatherQuestion } from "../lib/weather";
 const router = Router();
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const NVIDIA_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
+const MAX_NVIDIA_RETRIES = 2;
+const RETRYABLE_NVIDIA_STATUSES = new Set([502, 503, 504]);
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 router.post("/chat", async (req, res) => {
   const parsed = SendChatMessageBody.safeParse(req.body);
@@ -50,22 +56,52 @@ router.post("/chat", async (req, res) => {
       }
     }
 
-    const upstream = await fetch(NVIDIA_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: NVIDIA_MODEL,
-        messages,
-        max_tokens: 1024,
-        stream: false,
-      }),
-    });
+    let upstream: Response | undefined;
+    let detail = "";
+
+    for (let retry = 0; retry <= MAX_NVIDIA_RETRIES; retry += 1) {
+      upstream = await fetch(NVIDIA_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: NVIDIA_MODEL,
+          messages,
+          max_tokens: 1024,
+          stream: false,
+        }),
+      });
+
+      if (upstream.ok || !RETRYABLE_NVIDIA_STATUSES.has(upstream.status)) {
+        break;
+      }
+
+      detail = await upstream.text();
+      req.log.error(
+        {
+          status: upstream.status,
+          responseBody: detail.slice(0, 2000),
+          retry: retry + 1,
+          maxRetries: MAX_NVIDIA_RETRIES,
+        },
+        "Transient NVIDIA request failed",
+      );
+
+      if (retry < MAX_NVIDIA_RETRIES) {
+        await wait(200 * 2 ** retry);
+      }
+    }
+
+    if (!upstream) {
+      throw new Error("NVIDIA request did not produce a response.");
+    }
 
     if (!upstream.ok) {
-      const detail = await upstream.text();
+      if (!detail) {
+        detail = await upstream.text();
+      }
       req.log.error(
         { status: upstream.status, responseBody: detail.slice(0, 2000) },
         "NVIDIA request failed",
@@ -82,7 +118,7 @@ router.post("/chat", async (req, res) => {
         res.status(429).json({ error: "NVIDIA rate limit reached. Please try again shortly." });
         return;
       }
-      if (upstream.status === 502 || upstream.status === 503) {
+      if (RETRYABLE_NVIDIA_STATUSES.has(upstream.status)) {
         res.status(502).json({ error: "The NVIDIA model is temporarily unavailable. Please try again." });
         return;
       }
